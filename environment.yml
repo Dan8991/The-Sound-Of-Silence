@@ -1,0 +1,6 @@
+name: Tesi
+channels:
+dependencies:
+  - python=3.9
+  - numpy
+  - matplotlib
