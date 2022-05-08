@@ -43,7 +43,7 @@ def natural_vs_generated_audio(data):
             if tsallis_natural < tsallis_generated:
                 is_natural = is_natural + 1
 
-            if is_natural >= 1:  # if at least one divergence of the natural audio is lower than one of the corresponding generated audio
+            if is_natural >= 2:  # if at least two divergences of the natural audio is lower than one of the corresponding generated audio
                 correct = correct + 1
 
     tot_natural = tot_audio/2
