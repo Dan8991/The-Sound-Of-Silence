@@ -143,6 +143,11 @@ def gen_benford(m, k, a, b):
     return k * (np.log10(1 + (1 / (a + m ** b))) / np.log10(base))
 
 
+def exponential(x, p, a, b):
+    p_x = a*x + b*x**2
+    return p + np.exp(-p_x)
+
+
 def renyi_div(pk, qk, alpha):
     r = np.log2(np.nansum((pk ** alpha) * (qk ** (1 - alpha)))) / (alpha - 1)
     return r
@@ -153,16 +158,17 @@ def tsallis_div(pk, qk, alpha):
     return r
 
 
-def feature_extraction(ff):
+def feature_extraction(ff, function):
     """
-    This function fits the pmf of an audio with the Benford's law. The fitness is measured by some divergence functions.
+    This function fits the pmf of an audio with a given function. The fitness is measured by some divergence functions.
 
     Parameters:
     ff (numpy array): pmf of an audio
+    function (function): function for the fitting
 
     Returns:
     mse (int) Mean Square Error
-    popt[:, 0], popt[:, 1], popt[:, 2] (int): fitting parameters of the generalized Benford's law
+    popt[:, 0], popt[:, 1], popt[:, 2] (int): fitting parameters of the function
     kl (int) Kullback_Leibler divergence
     renyi (int): Renyi divergence
     tsallis (int): Tsallis divergence
@@ -180,7 +186,7 @@ def feature_extraction(ff):
     try:
         # Compute regular features
         popt_k, _ = curve_fit(gen_benford, np.arange(1, base, 1), ff,  bounds=(0, np.inf)) # popt_k = (k, a, b)
-        h_fit = gen_benford(np.arange(1, base, 1), *popt_k)
+        h_fit = function(np.arange(1, base, 1), *popt_k)
 
         h_fit_zeroes_idx = h_fit == 0
 
@@ -215,7 +221,7 @@ def feature_extraction(ff):
     return mse, popt[:, 0], popt[:, 1], popt[:, 2], kl, renyi, tsallis
 
 
-def create_df(ff_natural, ff_generated, names_natural, names_generated):
+def create_df(ff_natural, ff_generated, names_natural, names_generated, function):
 
     data = {
         "name":[],
@@ -230,7 +236,7 @@ def create_df(ff_natural, ff_generated, names_natural, names_generated):
     for i in range(len(ff_natural)):
         data["name"].append(names_natural[i])
         data["ff"].append(ff_natural[i])
-        mse, popt_0, popt_1, popt_2, kl, reny, tsallis = feature_extraction(ff_natural[i])
+        mse, popt_0, popt_1, popt_2, kl, reny, tsallis = feature_extraction(ff_natural[i], function)
         data["mse"].append(float(mse))
         data["kl"].append(float(kl))
         data["reny"].append(float(reny))
@@ -240,7 +246,7 @@ def create_df(ff_natural, ff_generated, names_natural, names_generated):
     for i in range(len(ff_generated)):
         data["name"].append(names_generated[i])
         data["ff"].append(ff_generated[i])
-        mse, popt_0, popt_1, popt_2, kl, reny, tsallis = feature_extraction(ff_generated[i])
+        mse, popt_0, popt_1, popt_2, kl, reny, tsallis = feature_extraction(ff_generated[i], function)
         data["mse"].append(float(mse))
         data["kl"].append(float(kl))
         data["reny"].append(float(reny))
@@ -259,18 +265,38 @@ def create_df(ff_natural, ff_generated, names_natural, names_generated):
 if __name__ == '__main__':
 
     base = 10
-    sr = 24000
-    q = 2
 
-    # NATURAL AUDIO
+    sr = 24000 # sampling rate of the dataset
+
+    q = 1 # quantization step
+
+    # Original dataset
     ff_natural, filenames_natural = first_digit_call("datasets/jsut_ver1.1/basic5000/wav", sr, q, base)
 
-    # GENERATED AUDIO
+    # Generated dataset
     ff_generated, filenames_generated = first_digit_call("datasets/generated_audio/jsut_multi_band_melgan", sr, q, base)
 
-    df = create_df(ff_natural, ff_generated, filenames_natural, filenames_generated)
+    # fitting with the Benford's law
+    df = create_df(ff_natural, ff_generated, filenames_natural, filenames_generated, gen_benford)
+    df.to_csv("datasets/df_jsut_multiband_melgan_q1.csv")
 
-    df.to_csv("datasets/df_jsut_multiband_melgan_q2.csv")
+    # fitting with the exponential function
+    df = create_df(ff_natural, ff_generated, filenames_natural, filenames_generated, exponential)
+    df.to_csv("datasets/df_exp_jsut_multiband_melgan_q1.csv")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
