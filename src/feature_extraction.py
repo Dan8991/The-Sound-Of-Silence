@@ -235,6 +235,13 @@ def feature_extraction(ff):
 
     return mse, popt[:, 0], popt[:, 1], popt[:, 2], kl, renyi, tsallis
 
+def map_labels(x):
+    if x["Label"] == "bonafide":
+        return 0
+    if x["Label"] == "spoof":
+        return 1
+    return np.nan
+
 
 def create_df(dataset_path, audio_format, splitting_path, n_freq, base):
     """
@@ -293,52 +300,24 @@ def create_df(dataset_path, audio_format, splitting_path, n_freq, base):
             x, y = np.shape(df1)
             df1_shape = x * y
             df1 = df1.reshape(-1, df1_shape)  # shape (1, 208)
-
-            # assign the corresponding label
-            data = pd.read_csv(splitting_path)
-            name = f[:-5] # remove '.flac' from the audio name
-
-
-            for i in range(len(data)):
-                # search for the label of the specific audio
-                if data['Audio file name'][i]==name:
-                    label = data['Label'][i]
-                    ID = data['System ID'][i]
-
-            labels = []
-            IDs = []
-
-            # assign the label
-            if label == 'bonafide':
-                label = 0
-                labels.append(label)
-                IDs.append(ID)
-
-            elif label == 'spoof':
-                label = 1
-                labels.append(label)
-                IDs.append(ID)
-
-            # The development set contains more audio files then the corresponding development list.
-            # At this audio a label 'nan' is assigned, then they will be removed.
-            else:
-                labels.append(np.nan)
-                IDs.append(ID)
-
             df1 = pd.DataFrame(df1)
-            df1['label'] = np.array(labels)
-            df1['system ID'] = np.array(IDs)
             df = pd.concat([df, df1], axis=0)
 
-        # rename columns of names
-        df.insert(loc=0, column='name', value=name_list)
+    df.insert(loc=0, column='name', value=name_list)
+    df["Audio file name"] = df.apply(lambda x: x["name"][:-5], axis=1)
 
-        # remove labels equal to nan values
-        list = (df[df.isna().any(axis=1)]['name'])
-        df = df[df.name.isin(list) == False]
+    # assign the corresponding label
+    data = pd.read_csv(splitting_path)
+    df = pd.merge(df, data, on=["Audio file name"]).drop(columns="Audio file name")
+    df["label"] = df.apply(map_labels, axis=1)
+    df = df.drop(columns=["Label", "Speaker ID", "Unnamed: 0"])
+    df.rename(columns={"System ID": "system ID"}, inplace=True)
 
-        # sorted dataframe by 'name' column
-        df = df.sort_values(by=['name'], ascending=True)
+    list = (df[df.isna().any(axis=1)]['name'])
+    df = df[df.name.isin(list) == False]
+
+    # sorted dataframe by 'name' column
+    df = df.sort_values(by=['name'], ascending=True)
 
     return df
 
