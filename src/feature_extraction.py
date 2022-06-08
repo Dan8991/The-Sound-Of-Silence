@@ -35,13 +35,21 @@ def mfcc_feature_extraction(audio_path, audio_format, q):
         print("Invalid value encountered in 'audio_format'")
 
     # trim all silence that is longer than 0.1 s
-    silence_part = 0
-    for i in range(len(signal)):
-        if signal[i]==0:
-            silence_part = silence_part + 1
+    signal = np.trim_zeros(signal)
 
-    if silence_part/sr > 0.1:
-        signal = signal[signal != 0]
+    slices = []
+    last = 0
+
+    #finding slices that should be removed
+    for i in range(len(signal)):
+        if signal[i]!=0:
+            if last != i and ((i - last) / sr) > 0.1:
+                slices.extend([last, i])
+            last = i + 1
+
+    if len(slices) > 0:
+        splits = np.split(signal, slices)
+        signal = np.concatenate(splits[::2], axis=0)
 
     # divide the signal into frames of 1024 samples, with an overlap of 512 samples (~50%)
     winlen = 1024 / sr  # convert into seconds
