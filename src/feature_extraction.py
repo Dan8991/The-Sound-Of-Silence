@@ -128,7 +128,7 @@ def first_digit_call(audio_path, audio_format, n_freq, q, base):
             audio_format (string): Can be either '.wav' or '.flac'
             n_freq (int): Frequency number
             q (int): quantization step
-            base (int)
+            base (list)
 
         Returns:
             ff_list, name_list (lists): list of pmfs and corresponding file names of all the audio of the dataset
@@ -142,12 +142,15 @@ def first_digit_call(audio_path, audio_format, n_freq, q, base):
     audio_mfccs = audio_mfccs[:, 1:] # (numframes, 13)
 
     # actually compute first digit vector
-    fd = first_digit_gen(audio_mfccs, base) # (numframes, 13)
+    ffs = []
+    for b in base:
+        fd = first_digit_gen(audio_mfccs, b) # (numframes, 13)
 
     # computing histograms
-    ff = compute_histograms(fd, base, n_freq)  # matrix with shape (frequencies, probabilities) = (13, base - 1)
+        ff = compute_histograms(fd, b, n_freq)  # matrix with shape (frequencies, probabilities) = (13, base - 1)
+        ffs.append(ff)
 
-    return ff
+    return ffs
 
 
 def renyi_div(pk, qk, alpha):
@@ -243,7 +246,7 @@ def create_df(dataset_path, audio_format, splitting_path, n_freq, base):
         audio_format (string): Can be either '.wav' or '.flac'
         splitting_path (string): Path of the file that contains the train-development-evaluation split.
         n_freq (int): number of frequencies
-        base (int)
+        base (list)
     """
 
     df = pd.DataFrame()
@@ -263,26 +266,27 @@ def create_df(dataset_path, audio_format, splitting_path, n_freq, base):
             # for each quantization step q = {1, 2, 3, 4}
             for q in range(1, 5):
 
-                ff = first_digit_call(audio_path=audio_path, audio_format=audio_format,  n_freq=n_freq, q=q, base=base) # (13, base - 1)
+                ffs = first_digit_call(audio_path=audio_path, audio_format=audio_format,  n_freq=n_freq, q=q, base=base) # (13, base - 1)
 
                 df2 = pd.DataFrame()
 
                 # for each frequency i = {0, 1, ..., 13}
-                for i in range(0, n_freq):
+                for ff in ffs:
+                    for i in range(0, n_freq):
 
-                    ff_temp = ff[i, :] # take one frequency at time (1, base - 1)
+                        ff_temp = ff[i, :] # take one frequency at time (1, base - 1)
 
-                    mse, popt_0, popt_1, popt_2, kl, reny, tsallis = feature_extraction(ff_temp)
+                        mse, popt_0, popt_1, popt_2, kl, reny, tsallis = feature_extraction(ff_temp)
 
-                    divergences_list = [float(mse), float(kl), float(reny), float(tsallis)]
+                        divergences_list = [float(mse), float(kl), float(reny), float(tsallis)]
 
-                    df_temp = pd.DataFrame({'{}'.format(i): divergences_list}) # is composed by four columns containing the four divergence values
+                        df_temp = pd.DataFrame({'{}'.format(i): divergences_list}) # is composed by four columns containing the four divergence values
 
-                    df2 = pd.concat([df2, df_temp], axis=1) # put these four values in column beside the one already computed before (on the previous frequencies)
-                    # at the end df2 has shape (4, 13)
+                        df2 = pd.concat([df2, df_temp], axis=1) # put these four values in column beside the one already computed before (on the previous frequencies)
+                        # at the end df2 has shape (4, 13)
 
                 df1 = pd.concat([df1, df2], axis=0)  # put in rows all the divergences for different quantization step
-                # shape (16 x 13)
+                    # shape (16 x 13)
 
             # vectorize
             df1 = np.array(df1)
@@ -362,25 +366,16 @@ if __name__ == '__main__':
     n_freq = 13
 
     # Training
-    df_train_b10 = create_df(dataset_path=train_path, audio_format='.flac', splitting_path=train_splitting_path,n_freq=n_freq, base=10)
-    df_train_b20 = create_df(dataset_path=train_path, audio_format='.flac', splitting_path=train_splitting_path,n_freq=n_freq, base=20)
-
-    df_train = concatenate_df(df_train_b10, df_train_b20)
+    df_train = create_df(dataset_path=train_path, audio_format='.flac', splitting_path=train_splitting_path,n_freq=n_freq, base=[10, 20])
 
     pd.DataFrame(df_train).to_csv("datasets/processed/ASVspoof-LA/df_train.csv", index=False)
 
     # Development
-    df_dev_b10 = create_df(dataset_path=dev_path, audio_format='.flac', splitting_path=dev_splitting_path, n_freq=n_freq, base=10)
-    df_dev_b20 = create_df(dataset_path=dev_path, audio_format='.flac', splitting_path=dev_splitting_path,n_freq=n_freq, base=20)
-
-    df_dev = concatenate_df(df_dev_b10, df_dev_b20)
+    df_dev = create_df(dataset_path=dev_path, audio_format='.flac', splitting_path=dev_splitting_path, n_freq=n_freq, base=[10, 20])
 
     pd.DataFrame(df_dev).to_csv("datasets/processed/ASVspoof-LA/df_dev.csv", index=False)
 
     # Evaluation
-    df_eval_b10 = create_df(dataset_path=eval_path, audio_format='.flac', splitting_path=eval_splitting_path,n_freq=n_freq, base=10)
-    df_eval_b20 = create_df(dataset_path=eval_path, audio_format='.flac', splitting_path=eval_splitting_path, n_freq=n_freq,base=20)
-
-    df_eval = concatenate_df(df_eval_b10, df_eval_b20)
+    df_eval = create_df(dataset_path=eval_path, audio_format='.flac', splitting_path=eval_splitting_path,n_freq=n_freq, base=[10, 20])
 
     pd.DataFrame(df_eval).to_csv("datasets/processed/ASVspoof-LA/df_eval.csv", index=False)
