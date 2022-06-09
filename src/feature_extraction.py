@@ -8,6 +8,103 @@ import soundfile as sf
 
 from scipy.optimize import curve_fit
 from scipy.stats import entropy
+from torch.utils.data import Dataset, DataLoader
+import torch
+
+class AudioDataset(Dataset):
+
+    def __init__(self, dataset_path, audio_format, n_freq, base):
+
+        super().__init__()
+        self.audio_format = audio_format
+        self.n_freq = n_freq
+        self.base = base
+
+        self.files = []
+
+        for i, (dirpath, dirnames, filenames) in enumerate(os.walk(dataset_path)):
+            for f in filenames:
+
+                audio_path = os.path.join(dirpath, f).replace("\\", "/") # for example 'datasets/raw/ASVspoof-LA/LA_D_1000752.flac'
+                self.files.append(audio_path)
+        
+    def __len__(self):
+        return len(self.files)
+
+    def __getitem__(self, idx):
+
+        audio_path = self.files[idx]
+        divergences_list = []
+        for q in range(1, 5):
+
+            ffs = first_digit_call(
+                audio_path=audio_path,
+                audio_format=self.audio_format,
+                n_freq=self.n_freq,
+                q=q,
+                base=self.base
+            ) # (13, base - 1)
+
+            # for each frequency i = {0, 1, ..., 13}
+            for ff in ffs:
+                for i in range(0, n_freq):
+
+                    ff_temp = ff[i, :] # take one frequency at time (1, base - 1)
+
+                    mse, popt_0, popt_1, popt_2, kl, reny, tsallis = feature_extraction(ff_temp)
+
+                    divergences_list += [float(mse), float(kl), float(reny), float(tsallis)]
+        name = os.path.basename(audio_path)
+
+        return name, np.array(divergences_list)
+
+
+
+def create_df(dataset_path, audio_format, splitting_path, n_freq, base):
+    """
+    This function creates a Pandas DataFrame in which each row corresponds to an audio sample. In particular, each row
+    contains the four divergences computed for each audio's frequency (4*13 = 52) computed with different quantization steps (52*4 = 208 columns).
+
+    Parameters:
+        dataset_path (string): Path of the dataset
+        audio_format (string): Can be either '.wav' or '.flac'
+        splitting_path (string): Path of the file that contains the train-development-evaluation split.
+        n_freq (int): number of frequencies
+        base (list)
+    """
+
+    df = pd.DataFrame()
+
+    name_list = []
+    dataset = AudioDataset(dataset_path, audio_format, n_freq, base)
+    dataloader = DataLoader(dataset, batch_size=4, shuffle=False, num_workers=os.cpu_count())
+    names = []
+    samples = []
+
+    for name, data in dataloader:
+        samples.append(data)
+        names += name
+
+    df = pd.DataFrame(torch.cat(samples, axis=0).numpy())
+    df.insert(loc=0, column='name', value=name_list)
+    df["Audio file name"] = df.apply(lambda x: x["name"][:-5], axis=1)
+
+    # assign the corresponding label
+    data = pd.read_csv(splitting_path)
+    df = pd.merge(df, data, on=["Audio file name"]).drop(columns="Audio file name")
+    df["label"] = df.apply(map_labels, axis=1)
+    df = df.drop(columns=["Label", "Speaker ID", "Unnamed: 0"])
+    df.rename(columns={"System ID": "system ID"}, inplace=True)
+
+    list = (df[df.isna().any(axis=1)]['name'])
+    df = df[df.name.isin(list) == False]
+
+    # sorted dataframe by 'name' column
+    df = df.sort_values(by=['name'], ascending=True)
+
+    return df
+
+
 
 
 def mfcc_feature_extraction(audio_path, audio_format, q):
@@ -241,85 +338,6 @@ def map_labels(x):
     if x["Label"] == "spoof":
         return 1
     return np.nan
-
-
-def create_df(dataset_path, audio_format, splitting_path, n_freq, base):
-    """
-    This function creates a Pandas DataFrame in which each row corresponds to an audio sample. In particular, each row
-    contains the four divergences computed for each audio's frequency (4*13 = 52) computed with different quantization steps (52*4 = 208 columns).
-
-    Parameters:
-        dataset_path (string): Path of the dataset
-        audio_format (string): Can be either '.wav' or '.flac'
-        splitting_path (string): Path of the file that contains the train-development-evaluation split.
-        n_freq (int): number of frequencies
-        base (list)
-    """
-
-    df = pd.DataFrame()
-
-    name_list = []
-
-    for i, (dirpath, dirnames, filenames) in enumerate(os.walk(dataset_path)):
-
-        for f in filenames:
-
-            name_list.append(f) # for example 'LA_D_1000752.flac'
-
-            df1 = pd.DataFrame()
-
-            audio_path = os.path.join(dirpath, f).replace("\\", "/") # for example 'datasets/raw/ASVspoof-LA/LA_D_1000752.flac'
-
-            # for each quantization step q = {1, 2, 3, 4}
-            for q in range(1, 5):
-
-                ffs = first_digit_call(audio_path=audio_path, audio_format=audio_format,  n_freq=n_freq, q=q, base=base) # (13, base - 1)
-
-                df2 = pd.DataFrame()
-
-                # for each frequency i = {0, 1, ..., 13}
-                for ff in ffs:
-                    for i in range(0, n_freq):
-
-                        ff_temp = ff[i, :] # take one frequency at time (1, base - 1)
-
-                        mse, popt_0, popt_1, popt_2, kl, reny, tsallis = feature_extraction(ff_temp)
-
-                        divergences_list = [float(mse), float(kl), float(reny), float(tsallis)]
-
-                        df_temp = pd.DataFrame({'{}'.format(i): divergences_list}) # is composed by four columns containing the four divergence values
-
-                        df2 = pd.concat([df2, df_temp], axis=1) # put these four values in column beside the one already computed before (on the previous frequencies)
-                        # at the end df2 has shape (4, 13)
-
-                df1 = pd.concat([df1, df2], axis=0)  # put in rows all the divergences for different quantization step
-                    # shape (16 x 13)
-
-            # vectorize
-            df1 = np.array(df1)
-            x, y = np.shape(df1)
-            df1_shape = x * y
-            df1 = df1.reshape(-1, df1_shape)  # shape (1, 208)
-            df1 = pd.DataFrame(df1)
-            df = pd.concat([df, df1], axis=0)
-
-    df.insert(loc=0, column='name', value=name_list)
-    df["Audio file name"] = df.apply(lambda x: x["name"][:-5], axis=1)
-
-    # assign the corresponding label
-    data = pd.read_csv(splitting_path)
-    df = pd.merge(df, data, on=["Audio file name"]).drop(columns="Audio file name")
-    df["label"] = df.apply(map_labels, axis=1)
-    df = df.drop(columns=["Label", "Speaker ID", "Unnamed: 0"])
-    df.rename(columns={"System ID": "system ID"}, inplace=True)
-
-    list = (df[df.isna().any(axis=1)]['name'])
-    df = df[df.name.isin(list) == False]
-
-    # sorted dataframe by 'name' column
-    df = df.sort_values(by=['name'], ascending=True)
-
-    return df
 
 
 def concatenate_df(df_base10, df_base20):
