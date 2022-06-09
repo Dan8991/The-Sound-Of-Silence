@@ -43,7 +43,7 @@ def mfcc_feature_extraction(audio_path, audio_format, q):
     #finding slices that should be removed
     for i in range(len(signal)):
         if signal[i]!=0:
-            if last != i and ((i - last) / sr) > 0.1:
+            if last != i and ((i - last) / sr) > 0.05:
                 slices.extend([last, i])
             last = i + 1
 
