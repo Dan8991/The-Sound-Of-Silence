@@ -84,6 +84,28 @@ if __name__ == '__main__':
     best_clf = gs.best_estimator_
     best_clf.fit(X_train, y_train)
 
+    #trainig set
+    train_algs = ['A01', 'A02', 'A03', 'A04', 'A05', 'A06']
+
+    for alg in train_algs:
+
+        label = re.findall("\d+", alg)[0]
+        labels = {'Natural':0, alg : label}
+
+        df_train_nat = train_data.loc[train_data['system ID'] == '-']
+        df_train_gen = train_data.loc[train_data['system ID'] == alg]
+        df_train = pd.concat([df_train_nat, df_train_gen], axis=0)
+
+        y_train = df_train['label'].to_numpy()
+        X_train = df_train.iloc[:, :-2]
+        X_train = X_train.iloc[:, 1:]
+
+        y_train_pred = best_clf.predict(X_train)
+        y_train_pred = np.array(y_train_pred)  # predicted labels
+
+        print("Train {} accuracy:".format(alg), accuracy_score(y_train, y_train_pred), "F1 score:", f1_score(y_train, y_train_pred, average='macro'))
+
+        plot_confusion_matrix('Development ({}) set'.format(alg), y_train, y_train_pred, labels, 'Reds')
     # Development set
     dev_algs = ['A01', 'A02', 'A03', 'A04', 'A05', 'A06']
 
