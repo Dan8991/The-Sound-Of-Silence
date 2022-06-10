@@ -86,7 +86,7 @@ def create_df(dataset_path, audio_format, splitting_path, n_freq, base):
         names += name
 
     df = pd.DataFrame(torch.cat(samples, axis=0).numpy())
-    df.insert(loc=0, column='name', value=name_list)
+    df.insert(loc=0, column='name', value=names)
     df["Audio file name"] = df.apply(lambda x: x["name"][:-5], axis=1)
 
     # assign the corresponding label
@@ -359,6 +359,8 @@ if __name__ == '__main__':
     train_splitting_path = "datasets/processed/ASVspoof-LA/asv_training_set.csv"
     dev_splitting_path = "datasets/processed/ASVspoof-LA/asv_development_set.csv"
     eval_splitting_path = "datasets/processed/ASVspoof-LA/asv_evaluation_set.csv"
+    pool = torch.multiprocessing.Pool(torch.multiprocessing.cpu_count(), maxtasksperchild=1)
+    torch.multiprocessing.set_sharing_strategy('file_system')
 
     n_freq = 13
 
