@@ -9,6 +9,7 @@ import soundfile as sf
 from scipy.optimize import curve_fit
 from scipy.stats import entropy
 from torch.utils.data import Dataset, DataLoader
+from librosa.effects import trim
 import torch
 
 class AudioDataset(Dataset):
@@ -132,14 +133,14 @@ def mfcc_feature_extraction(audio_path, audio_format, q):
         print("Invalid value encountered in 'audio_format'")
 
     # trim all silence that is longer than 0.1 s
-    signal = np.trim_zeros(signal)
+    signal, _ = trim(signal, top_db = 40)
 
     slices = []
     last = 0
 
     #finding slices that should be removed
     for i in range(len(signal)):
-        if signal[i]!=0:
+        if signal[i] != 0:
             if last != i and ((i - last) / sr) > 0.05:
                 slices.extend([last, i])
             last = i + 1
@@ -359,21 +360,27 @@ if __name__ == '__main__':
     train_splitting_path = "datasets/processed/ASVspoof-LA/asv_training_set.csv"
     dev_splitting_path = "datasets/processed/ASVspoof-LA/asv_development_set.csv"
     eval_splitting_path = "datasets/processed/ASVspoof-LA/asv_evaluation_set.csv"
+    # import resource
+    # rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
+    # resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))
     pool = torch.multiprocessing.Pool(torch.multiprocessing.cpu_count(), maxtasksperchild=1)
     torch.multiprocessing.set_sharing_strategy('file_system')
 
     n_freq = 13
 
+    print("Train")
     # Training
     df_train = create_df(dataset_path=train_path, audio_format='.flac', splitting_path=train_splitting_path,n_freq=n_freq, base=[10, 20])
 
     pd.DataFrame(df_train).to_csv("datasets/processed/ASVspoof-LA/df_train.csv", index=False)
 
+    print("Dev")
     # Development
     df_dev = create_df(dataset_path=dev_path, audio_format='.flac', splitting_path=dev_splitting_path, n_freq=n_freq, base=[10, 20])
 
     pd.DataFrame(df_dev).to_csv("datasets/processed/ASVspoof-LA/df_dev.csv", index=False)
 
+    print("Eval")
     # Evaluation
     df_eval = create_df(dataset_path=eval_path, audio_format='.flac', splitting_path=eval_splitting_path,n_freq=n_freq, base=[10, 20])
 
