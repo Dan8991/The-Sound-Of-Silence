@@ -27,9 +27,25 @@ def plot_confusion_matrix(dataset, y_true, y_pred, labels, cmap):
 if __name__ == '__main__':
 
     # importing the data
-    train_data = pd.read_csv("datasets/processed/ASVspoof-LA/df_train.csv")
-    dev_data = pd.read_csv("datasets/processed/ASVspoof-LA/df_dev.csv")
-    eval_data = pd.read_csv("datasets/processed/ASVspoof-LA/df_eval.csv")
+    train_data = pd.read_csv("datasets/processed/ASVspoof-LA/df_train_silence.csv")
+    dev_data = pd.read_csv("datasets/processed/ASVspoof-LA/df_dev_silence.csv")
+    eval_data = pd.read_csv("datasets/processed/ASVspoof-LA/df_eval_silence.csv")
+
+    train_data["length"] = train_data["length"].map(lambda x: int(x[7:-1]))
+    dev_data["length"] = dev_data["length"].map(lambda x: int(x[7:-1]))
+    eval_data["length"] = eval_data["length"].map(lambda x: int(x[7:-1]))
+
+    train_data = train_data[train_data["length"] > 5000]
+    dev_data = dev_data[dev_data["length"] > 5000]
+    eval_data = eval_data[eval_data["length"] > 5000]
+
+    train_data = train_data.drop(columns="length")
+    dev_data = dev_data.drop(columns="length")
+    eval_data = eval_data.drop(columns="length")
+
+    train_data = train_data.dropna()
+    dev_data = dev_data.dropna()
+    eval_data = eval_data.dropna()
 
     #  train on same number of natural and generated audio
     df_train_nat = train_data.loc[train_data['system ID'] == '-']
