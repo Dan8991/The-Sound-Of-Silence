@@ -13,15 +13,28 @@ from scipy.stats import entropy
 from torch.utils.data import Dataset, DataLoader
 from librosa.effects import trim
 import torch
+import argparse
+
+def parse_args():
+
+    parser = argparse.ArgumentParser(description="Preprocess the ASVSpoof dataset")
+    parser.add_argument("--type", default="full", help="type of processed signal can be:\n"
+            "full: the whole signal is processed\n"
+            "sound: processes only parts with high enough energy\n"
+            "silence: processes only parts with low enough energy\n"
+    )
+    return parser.parse_args()
+
 
 class AudioDataset(Dataset):
 
-    def __init__(self, dataset_path, audio_format, n_freq, base):
+    def __init__(self, dataset_path, audio_format, n_freq, base, signal_type):
 
         super().__init__()
         self.audio_format = audio_format
         self.n_freq = n_freq
         self.base = base
+        self.signal_type = signal_type
 
         self.files = []
 
@@ -37,39 +50,33 @@ class AudioDataset(Dataset):
     def __getitem__(self, idx):
 
         audio_path = self.files[idx]
-        divergences_list_sound = []
-        divergences_list_silence = []
-        for q in range(1, 5):
+        divergences_list = []
 
-            ffs_sound, ffs_silence, len_silence = first_digit_call(
-                audio_path=audio_path,
-                audio_format=self.audio_format,
-                n_freq=self.n_freq,
-                q=q,
-                base=self.base
-            ) # (13, base - 1)
+        ffs, len_signals = first_digit_call(
+            audio_path=audio_path,
+            audio_format=self.audio_format,
+            n_freq=self.n_freq,
+            base=self.base,
+            signal_type=self.signal_type
+        ) # (13, base - 1)
 
-            # for each frequency i = {0, 1, ..., 13}
-            for ff_silence in ffs_silence:
-                for i in range(0, n_freq):
+        # for each frequency i = {0, 1, ..., 13}
+        for ff in ffs:
+            for i in range(0, n_freq):
 
-                    # ff_temp_sound = ff_sound[i, :] # take one frequency at time (1, base - 1)
-                    ff_temp_silence = ff_silence[i, :] # take one frequency at time (1, base - 1)
+                # ff_temp_sound = ff_sound[i, :] # take one frequency at time (1, base - 1)
+                ff_temp = ff[i, :] # take one frequency at time (1, base - 1)
 
-                    # mse, popt_0, popt_1, popt_2, kl, reny, tsallis = feature_extraction(ff_temp_sound)
-
-                    # divergences_list_sound += [float(mse), float(kl), float(reny), float(tsallis)]
-
-                    mse, popt_0, popt_1, popt_2, kl, reny, tsallis = feature_extraction(ff_temp_silence)
-                    divergences_list_silence += [float(mse), float(kl), float(reny), float(tsallis)] 
+                mse, popt_0, popt_1, popt_2, kl, reny, tsallis = feature_extraction(ff_temp)
+                divergences_list += [float(mse), float(kl), float(reny), float(tsallis)] 
 
         name = os.path.basename(audio_path)
 
-        return name, np.array(divergences_list_silence), np.array(len_silence)#np.array(divergences_list_sound)
+        return name, np.array(divergences_list), np.array(len_signals)
 
 
 
-def create_df(dataset_path, audio_format, splitting_path, n_freq, base):
+def create_df(dataset_path, audio_format, splitting_path, n_freq, base, signal_type="full"):
     """
     This function creates a Pandas DataFrame in which each row corresponds to an audio sample. In particular, each row
     contains the four divergences computed for each audio's frequency (4*13 = 52) computed with different quantization steps (52*4 = 208 columns).
@@ -85,58 +92,37 @@ def create_df(dataset_path, audio_format, splitting_path, n_freq, base):
     df = pd.DataFrame()
 
     name_list = []
-    dataset = AudioDataset(dataset_path, audio_format, n_freq, base)
+    dataset = AudioDataset(dataset_path, audio_format, n_freq, base, signal_type)
     dataloader = DataLoader(dataset, batch_size=4, shuffle=False, num_workers=os.cpu_count())
     names = []
-    samples_silence = []
-    samples_sound = []
-    len_silences = []
+    samples = []
+    signal_lengths = []
 
-    l1 = 0
-    l2 = 0
-    for name, data_silence, len_silence in tqdm(dataloader):
-        # samples_sound.append(data_sound)
-        samples_silence.append(data_silence)
-        len_silences += list(len_silence)
+    for name, data, signal_len in tqdm(dataloader):
+        samples.append(data)
+        signal_lengths += list(signal_len.numpy())
         names += name
 
-    # df_sound = pd.DataFrame(torch.cat(samples_sound, axis=0).numpy())
-    # df_sound.insert(loc=0, column='name', value=names)
-    # df_sound["Audio file name"] = df_sound.apply(lambda x: x["name"][:-5], axis=1)
 
-    # # assign the corresponding label
-    # data = pd.read_csv(splitting_path)
-    # df_sound = pd.merge(df_sound, data, on=["Audio file name"]).drop(columns="Audio file name")
-    # df_sound["label"] = df_sound.apply(map_labels, axis=1)
-    # df_sound = df_sound.drop(columns=["Label", "Speaker ID", "Unnamed: 0"])
-    # df_sound.rename(columns={"System ID": "system ID"}, inplace=True)
-
-    # df_list_sound = (df_sound[df_sound.isna().any(axis=1)]['name'])
-    # df_sound = df_sound[df_sound.name.isin(df_list_sound) == False]
-
-    # # sorted dataframe by 'name' column
-    # df_sound = df_sound.sort_values(by=['name'], ascending=True)
-
-
-    df_silence = pd.DataFrame(torch.cat(samples_silence, axis=0).numpy())
-    df_silence.insert(loc=0, column='name', value=names)
-    df_silence["Audio file name"] = df_silence.apply(lambda x: x["name"][:-5], axis=1)
-    df_silence["length"] = len_silences
+    df = pd.DataFrame(torch.cat(samples, axis=0).numpy())
+    df.insert(loc=0, column='name', value=names)
+    df["Audio file name"] = df.apply(lambda x: x["name"][:-5], axis=1)
+    df["length"] = signal_lengths
 
     # assign the corresponding label
     data = pd.read_csv(splitting_path)
-    df_silence = pd.merge(df_silence, data, on=["Audio file name"]).drop(columns="Audio file name")
-    df_silence["label"] = df_silence.apply(map_labels, axis=1)
-    df_silence = df_silence.drop(columns=["Label", "Speaker ID", "Unnamed: 0"])
-    df_silence.rename(columns={"System ID": "system ID"}, inplace=True)
+    df = pd.merge(df, data, on=["Audio file name"]).drop(columns="Audio file name")
+    df["label"] = df.apply(map_labels, axis=1)
+    df = df.drop(columns=["Label", "Speaker ID", "Unnamed: 0"])
+    df.rename(columns={"System ID": "system ID"}, inplace=True)
 
-    # df_list_silence = (df_silence[df_silence.isna().any(axis=1)]['name'])
-    # df_silence = df_silence[df_silence.name.isin(df_list_silence) == False]
+    # df_list = (df[df.isna().any(axis=1)]['name'])
+    # df = df[df.name.isin(df_list) == False]
 
     # sorted dataframe by 'name' column
-    df_silence = df_silence.sort_values(by=['name'], ascending=True)
+    df = df.sort_values(by=['name'], ascending=True)
 
-    return None, df_silence
+    return df
 
 
 def split_silence(signal):
@@ -149,7 +135,7 @@ def split_silence(signal):
     return window_power_db
 
 
-def mfcc_feature_extraction(audio_path, audio_format, q):
+def mfcc_feature_extraction(audio_path, audio_format, signal_type="full"):
     """
     This function extracts mfcc features from an audio file.
 
@@ -174,28 +160,24 @@ def mfcc_feature_extraction(audio_path, audio_format, q):
         print("Invalid value encountered in 'audio_format'")
 
     # trim all silence that is longer than 0.1 s
-    window_power = split_silence(signal)
-    silence = signal[torch.where(window_power[0, 0] > 40)]
-    silence = silence[np.where(silence != 0)]
-    sound = signal[torch.where(window_power[0, 0] <= 40)]
-    # signal, _ = trim(signal, top_db = 40)
+    if signal_type != "full":
+        window_power = split_silence(signal)
+    if signal_type == "silence":
+        print("silence")
+        silence = signal[torch.where(window_power[0, 0] > 40)]
+        signal = silence[np.where(silence != 0)]
+    elif signal_type == "sound":
+        print("sound")
+        signal = signal[torch.where(window_power[0, 0] <= 40)]
 
-    len_silences = len(silence)
-    if len_silences < 5000:
-        silence = np.random.rand(*sound.shape)
+    signal_lengths = len(signal)
+    # this can only happen for silence signals since they are usually shorter
+    # the noise is just a placeholder since it will be removed form training/testing
+    if signal_lengths < 5000:
+        signal = np.random.rand(10000)
+
     slices = []
     last = 0
-
-    # finding slices that should be removed
-    # for i in range(len(silence)):
-        # if silence[i] != 0:
-            # if last != i and ((i - last) / sr) > 0.05:
-                # slices.extend([last, i])
-            # last = i + 1
-
-    # if len(slices) > 0:
-        # splits = np.split(signal, slices)
-        # silence = np.concatenate(splits[::2], axis=0)
 
     # divide the signal into frames of 1024 samples, with an overlap of 512 samples (~50%)
     winlen = 1024 / sr  # convert into seconds
@@ -214,14 +196,9 @@ def mfcc_feature_extraction(audio_path, audio_format, q):
     highfreq = sr / 2
 
     # get mfcc coefficients of shape (numframes, numcep)
-    # mfccs_sound = mfcc(sound, samplerate=sr, winlen=winlen, winstep=winstep, nfft=nfft, numcep=numcep, nfilt=nfilt, highfreq=highfreq)
-    mfccs_silence = mfcc(silence, samplerate=sr, winlen=winlen, winstep=winstep, nfft=nfft, numcep=numcep, nfilt=nfilt, highfreq=highfreq)
+    mfccs = mfcc(signal, samplerate=sr, winlen=winlen, winstep=winstep, nfft=nfft, numcep=numcep, nfilt=nfilt, highfreq=highfreq)
 
-    # quantization
-    # mfccs_sound = (mfccs_sound / q)
-    mfccs_silence = (mfccs_silence / q)
-
-    return None, mfccs_silence, len_silences
+    return mfccs, signal_lengths
 
 
 def first_digit_gen(d, base):
@@ -267,7 +244,7 @@ def compute_histograms(audio, base, n_freq):
     return np.asarray(h_audio)
 
 
-def first_digit_call(audio_path, audio_format, n_freq, q, base):
+def first_digit_call(audio_path, audio_format, n_freq, base, signal_type):
     """
         This function computes the MFCCs and the corresponding first digit vector and histogram of each .wav file stored in a given directory.
 
@@ -284,26 +261,22 @@ def first_digit_call(audio_path, audio_format, n_freq, q, base):
     """
 
     # extract mfcc features from the audio
-    mfccs_sound, mfccs_silence, len_silence = mfcc_feature_extraction(audio_path, audio_format, q)
+    mfccs, len_signals = mfcc_feature_extraction(audio_path, audio_format, signal_type=signal_type)
 
     # remove DC (zero frequency component)
-    # mfccs_sound = mfccs_sound[:, 1:] # (numframes, 13)
-    mfccs_silence = mfccs_silence[:, 1:] # (numframes, 13)
+    mfccs = mfccs[:, 1:] # (numframes, 13)
 
     # actually compute first digit vector
-    ffs_sound = []
-    ffs_silence = []
-    for b in base:
-        # fd_sound = first_digit_gen(mfccs_sound, b) # (numframes, 13)
-        fd_silence = first_digit_gen(mfccs_silence, b) # (numframes, 13)
+    ffs = []
+    for q in range(1, 5):
+        for b in base:
+            fd = first_digit_gen(mfccs / q, b) # (numframes, 13)
 
-    # computing histograms
-        # ff_sound = compute_histograms(fd_sound, b, n_freq)  # matrix with shape (frequencies, probabilities) = (13, base - 1)
-        ff_silence = compute_histograms(fd_silence, b, n_freq)  # matrix with shape (frequencies, probabilities) = (13, base - 1)
-        # ffs_sound.append(ff_sound)
-        ffs_silence.append(ff_silence)
+            # computing histograms
+            ff = compute_histograms(fd, b, n_freq)  # matrix with shape (frequencies, probabilities) = (13, base - 1)
+            ffs.append(ff)
 
-    return ffs_sound, ffs_silence, len_silence
+    return ffs, len_signals
 
 
 def renyi_div(pk, qk, alpha):
@@ -408,6 +381,9 @@ def concatenate_df(df_base10, df_base20):
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
 
+    args = parse_args()
+    signal_type = args.type
+    assert signal_type in ["full", "sound", "silence"]
     train_path = 'datasets/raw/ASVspoof-LA/ASVspoof2019_LA_train/flac/'
     dev_path = 'datasets/raw/ASVspoof-LA/ASVspoof2019_LA_dev/flac/'
     eval_path = 'datasets/raw/ASVspoof-LA/ASVspoof2019_LA_eval/flac/'
@@ -415,9 +391,8 @@ if __name__ == '__main__':
     train_splitting_path = "datasets/processed/ASVspoof-LA/asv_training_set.csv"
     dev_splitting_path = "datasets/processed/ASVspoof-LA/asv_development_set.csv"
     eval_splitting_path = "datasets/processed/ASVspoof-LA/asv_evaluation_set.csv"
-    # import resource
-    # rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
-    # resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))
+
+    #required since sometimes there are errors with torch
     pool = torch.multiprocessing.Pool(torch.multiprocessing.cpu_count(), maxtasksperchild=1)
     torch.multiprocessing.set_sharing_strategy('file_system')
 
@@ -425,21 +400,18 @@ if __name__ == '__main__':
 
     print("Train")
     # Training
-    df_train_sound, df_train_silence = create_df(dataset_path=train_path, audio_format='.flac', splitting_path=train_splitting_path,n_freq=n_freq, base=[10, 20])
+    df_train = create_df(dataset_path=train_path, audio_format='.flac', splitting_path=train_splitting_path,n_freq=n_freq, base=[10, 20], signal_type=signal_type)
 
-    # pd.DataFrame(df_train_sound).to_csv("datasets/processed/ASVspoof-LA/df_train_sound.csv", index=False)
-    pd.DataFrame(df_train_silence).to_csv("datasets/processed/ASVspoof-LA/df_train_silence.csv", index=False)
+    pd.DataFrame(df_train).to_csv("datasets/processed/ASVspoof-LA/df_train_{signal_type}.csv", index=False)
 
     print("Dev")
     # Development
-    df_dev_sound, df_dev_silence = create_df(dataset_path=dev_path, audio_format='.flac', splitting_path=dev_splitting_path, n_freq=n_freq, base=[10, 20])
+    df_dev = create_df(dataset_path=dev_path, audio_format='.flac', splitting_path=dev_splitting_path, n_freq=n_freq, base=[10, 20], signal_type=signal_type)
 
-    # pd.DataFrame(df_dev_sound).to_csv("datasets/processed/ASVspoof-LA/df_dev_sound.csv", index=False)
-    pd.DataFrame(df_dev_silence).to_csv("datasets/processed/ASVspoof-LA/df_dev_silence.csv", index=False)
+    pd.DataFrame(df_dev).to_csv("datasets/processed/ASVspoof-LA/df_dev_{signal_type}.csv", index=False)
 
     print("Eval")
     # Evaluation
-    df_eval_sound, df_eval_silence = create_df(dataset_path=eval_path, audio_format='.flac', splitting_path=eval_splitting_path,n_freq=n_freq, base=[10, 20])
+    df_eval = create_df(dataset_path=eval_path, audio_format='.flac', splitting_path=eval_splitting_path,n_freq=n_freq, base=[10, 20], signal_type=signal_type)
 
-    # pd.DataFrame(df_eval_sound).to_csv("datasets/processed/ASVspoof-LA/df_eval_sound.csv", index=False)
-    pd.DataFrame(df_eval_silence).to_csv("datasets/processed/ASVspoof-LA/df_eval_silence.csv", index=False)
+    pd.DataFrame(df_eval).to_csv("datasets/processed/ASVspoof-LA/df_eval_{signal_type}.csv", index=False)
