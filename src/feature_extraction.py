@@ -402,16 +402,16 @@ if __name__ == '__main__':
     # Training
     df_train = create_df(dataset_path=train_path, audio_format='.flac', splitting_path=train_splitting_path,n_freq=n_freq, base=[10, 20], signal_type=signal_type)
 
-    pd.DataFrame(df_train).to_csv("datasets/processed/ASVspoof-LA/df_train_{signal_type}.csv", index=False)
+    pd.DataFrame(df_train).to_csv(f"datasets/processed/ASVspoof-LA/df_train_{signal_type}.csv", index=False)
 
     print("Dev")
     # Development
     df_dev = create_df(dataset_path=dev_path, audio_format='.flac', splitting_path=dev_splitting_path, n_freq=n_freq, base=[10, 20], signal_type=signal_type)
 
-    pd.DataFrame(df_dev).to_csv("datasets/processed/ASVspoof-LA/df_dev_{signal_type}.csv", index=False)
+    pd.DataFrame(df_dev).to_csv(f"datasets/processed/ASVspoof-LA/df_dev_{signal_type}.csv", index=False)
 
     print("Eval")
     # Evaluation
     df_eval = create_df(dataset_path=eval_path, audio_format='.flac', splitting_path=eval_splitting_path,n_freq=n_freq, base=[10, 20], signal_type=signal_type)
 
-    pd.DataFrame(df_eval).to_csv("datasets/processed/ASVspoof-LA/df_eval_{signal_type}.csv", index=False)
+    pd.DataFrame(df_eval).to_csv(f"datasets/processed/ASVspoof-LA/df_eval_{signal_type}.csv", index=False)
