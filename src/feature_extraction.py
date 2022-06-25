@@ -163,11 +163,9 @@ def mfcc_feature_extraction(audio_path, audio_format, signal_type="full"):
     if signal_type != "full":
         window_power = split_silence(signal)
     if signal_type == "silence":
-        print("silence")
         silence = signal[torch.where(window_power[0, 0] > 40)]
         signal = silence[np.where(silence != 0)]
     elif signal_type == "sound":
-        print("sound")
         signal = signal[torch.where(window_power[0, 0] <= 40)]
 
     signal_lengths = len(signal)
