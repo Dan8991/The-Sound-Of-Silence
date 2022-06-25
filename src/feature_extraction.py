@@ -7,6 +7,7 @@ import pandas as pd
 from scipy.io import wavfile
 from python_speech_features import mfcc
 import soundfile as sf
+from multiprocessing import Pool
 
 from scipy.optimize import curve_fit
 from scipy.stats import entropy
@@ -93,15 +94,16 @@ def create_df(dataset_path, audio_format, splitting_path, n_freq, base, signal_t
 
     name_list = []
     dataset = AudioDataset(dataset_path, audio_format, n_freq, base, signal_type)
-    dataloader = DataLoader(dataset, batch_size=4, shuffle=False, num_workers=os.cpu_count())
     names = []
     samples = []
     signal_lengths = []
 
-    for name, data, signal_len in tqdm(dataloader):
-        samples.append(data)
-        signal_lengths += list(signal_len.numpy())
-        names += name
+    with Pool(os.cpu_count(), maxtasksperchild=1) as p:
+        names, samples, signal_lengths = list(tqdm(p.imap(dataset.__getitem__, np.arange(len(dataset))), total=len(dataset)))
+    # for name, data, signal_len in tqdm(dataloader):
+        # samples.append(data)
+        # signal_lengths += list(signal_len.numpy())
+        # names += name
 
 
     df = pd.DataFrame(torch.cat(samples, axis=0).numpy())
@@ -391,8 +393,8 @@ if __name__ == '__main__':
     eval_splitting_path = "datasets/processed/ASVspoof-LA/asv_evaluation_set.csv"
 
     #required since sometimes there are errors with torch
-    pool = torch.multiprocessing.Pool(torch.multiprocessing.cpu_count(), maxtasksperchild=1)
-    torch.multiprocessing.set_sharing_strategy('file_system')
+    # pool = torch.multiprocessing.Pool(torch.multiprocessing.cpu_count(), maxtasksperchild=1)
+    # torch.multiprocessing.set_sharing_strategy('file_system')
 
     n_freq = 13
 
