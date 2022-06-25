@@ -181,7 +181,7 @@ def mfcc_feature_extraction(audio_path, audio_format, signal_type="full"):
 
     # divide the signal into frames of 1024 samples, with an overlap of 512 samples (~50%)
     winlen = 1024 / sr  # convert into seconds
-    winstep = winlen / 8
+    winstep = winlen / (8 if signal_type == "silence" else 2)
 
     # number of coefficients to return
     numcep = 14
