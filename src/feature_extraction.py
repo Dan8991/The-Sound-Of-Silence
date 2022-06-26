@@ -170,6 +170,7 @@ def mfcc_feature_extraction(audio_path, audio_format, signal_type="full"):
     elif signal_type == "sound":
         signal = signal[torch.where(window_power[0, 0] <= 40)]
 
+    signal = signal[np.where(signal != 0)]
     signal_lengths = len(signal)
     # this can only happen for silence signals since they are usually shorter
     # the noise is just a placeholder since it will be removed form training/testing
