@@ -99,14 +99,14 @@ def create_df(dataset_path, audio_format, splitting_path, n_freq, base, signal_t
     signal_lengths = []
 
     with Pool(os.cpu_count(), maxtasksperchild=1) as p:
-        names, samples, signal_lengths = list(tqdm(p.imap(dataset.__getitem__, np.arange(len(dataset))), total=len(dataset)))
+        names, samples, signal_lengths = zip(*tqdm(p.imap(dataset.__getitem__, np.arange(len(dataset))), total=len(dataset)))
     # for name, data, signal_len in tqdm(dataloader):
         # samples.append(data)
         # signal_lengths += list(signal_len.numpy())
         # names += name
 
 
-    df = pd.DataFrame(torch.cat(samples, axis=0).numpy())
+    df = pd.DataFrame(samples)
     df.insert(loc=0, column='name', value=names)
     df["Audio file name"] = df.apply(lambda x: x["name"][:-5], axis=1)
     df["length"] = signal_lengths
