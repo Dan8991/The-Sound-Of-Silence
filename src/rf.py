@@ -7,7 +7,18 @@ import matplotlib.pyplot as plt
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import PredefinedSplit, train_test_split, GridSearchCV
 from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
+import argparse
 
+def parse_args():
+    parser = argparse.ArgumentParser("fits a RF to the data")
+    parser.add_argument("--q", default="all", help="scaling factors")
+    parser.add_argument("--base", default="all", help="bases to be used for benford computation")
+    parser.add_argument("--type", default="full", help="type of processed signal can be:\n"
+            "full: the whole signal is processed\n"
+            "sound: processes only parts with high enough energy\n"
+            "silence: processes only parts with low enough energy\n"
+    )
+    return parser.parse_args()
 
 def plot_confusion_matrix(dataset, y_true, y_pred, labels, cmap):
 
@@ -22,18 +33,34 @@ def plot_confusion_matrix(dataset, y_true, y_pred, labels, cmap):
   plt.ylabel('True')
   plt.show()
 
+def select_useful_features(X, q, base):
+
+    if q != "all":
+        q = int(q)
+        delta = X.shape[1]
+        X = X[(delta * (q-1)):(delta * q)]
+
+    if base != "all":
+        base = int(base)
+        X = X.reshape((-1, X.shape[1] // 13, 13))
+        X = X[:, (0 if base==10 else 1)::2]
+        X = X.reshape([X.shape[0], -1])
+    
+    return X
+
+
 
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
 
+    args = parse_args()
+    q = args.q
+    base = args.base
+    signal_type = args.type
     # importing the data
-    train_data = pd.read_csv("datasets/processed/ASVspoof-LA/df_train_silence.csv")
-    dev_data = pd.read_csv("datasets/processed/ASVspoof-LA/df_dev_silence.csv")
-    eval_data = pd.read_csv("datasets/processed/ASVspoof-LA/df_eval_silence.csv")
-
-    train_data["length"] = train_data["length"].map(lambda x: int(x[7:-1]))
-    dev_data["length"] = dev_data["length"].map(lambda x: int(x[7:-1]))
-    eval_data["length"] = eval_data["length"].map(lambda x: int(x[7:-1]))
+    train_data = pd.read_csv(f"datasets/processed/ASVspoof-LA/df_train_{signal_type}.csv")
+    dev_data = pd.read_csv(f"datasets/processed/ASVspoof-LA/df_dev_{signal_type}.csv")
+    eval_data = pd.read_csv(f"datasets/processed/ASVspoof-LA/df_eval_{signal_type}.csv")
 
     train_data = train_data[train_data["length"] > 5000]
     dev_data = dev_data[dev_data["length"] > 5000]
