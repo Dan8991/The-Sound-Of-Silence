@@ -3,6 +3,8 @@ import numpy as np
 import pandas as pd
 import seaborn as sn
 import matplotlib.pyplot as plt
+import os
+import random
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import PredefinedSplit, train_test_split, GridSearchCV
@@ -57,6 +59,9 @@ def select_useful_features(X, q, base):
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
 
+    seed = 0
+    np.random.seed(seed)
+    random.seed(seed)
     args = parse_args()
     q = args.q
     base = args.base
@@ -117,7 +122,7 @@ if __name__ == '__main__':
 
     params = dict(n_estimators=n_estimators, criterion=criterion)
 
-    clf = RandomForestClassifier()
+    clf = RandomForestClassifier(n_jobs=os.cpu_count(), random_state=seed)
 
     gs = GridSearchCV(clf, params, cv=pds, scoring='accuracy', verbose=10)
 
