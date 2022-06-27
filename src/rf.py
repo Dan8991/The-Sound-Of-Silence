@@ -85,12 +85,12 @@ if __name__ == '__main__':
 
     #  train on same number of natural and generated audio
     df_train_nat = train_data.loc[train_data['system ID'] == '-']
-    df_train_gen_A01 = train_data.loc[train_data['system ID'] == 'A01'][0:430]
-    df_train_gen_A02 = train_data.loc[train_data['system ID'] == 'A02'][0:430]
-    df_train_gen_A03 = train_data.loc[train_data['system ID'] == 'A03'][0:430]
-    df_train_gen_A04 = train_data.loc[train_data['system ID'] == 'A04'][0:430]
-    df_train_gen_A05 = train_data.loc[train_data['system ID'] == 'A05'][0:430]
-    df_train_gen_A06 = train_data.loc[train_data['system ID'] == 'A06'][0:430]
+    df_train_gen_A01 = train_data.loc[train_data['system ID'] == 'A01'].sample(frac=1, random_state=np.random.randint(0, 10000))[0:430]
+    df_train_gen_A02 = train_data.loc[train_data['system ID'] == 'A02'].sample(frac=1, random_state=np.random.randint(0, 10000))[0:430]
+    df_train_gen_A03 = train_data.loc[train_data['system ID'] == 'A03'].sample(frac=1, random_state=np.random.randint(0, 10000))[0:430]
+    df_train_gen_A04 = train_data.loc[train_data['system ID'] == 'A04'].sample(frac=1, random_state=np.random.randint(0, 10000))[0:430]
+    df_train_gen_A05 = train_data.loc[train_data['system ID'] == 'A05'].sample(frac=1, random_state=np.random.randint(0, 10000))[0:430]
+    df_train_gen_A06 = train_data.loc[train_data['system ID'] == 'A06'].sample(frac=1, random_state=np.random.randint(0, 10000))[0:430]
     df_train_gen = pd.concat([df_train_gen_A01, df_train_gen_A02, df_train_gen_A03, df_train_gen_A04, df_train_gen_A05, df_train_gen_A06], axis=0)
 
     df_train = pd.concat([df_train_nat, df_train_gen], axis=0)  # create the new training dataset
