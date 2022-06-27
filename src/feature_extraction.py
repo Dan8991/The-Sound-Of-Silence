@@ -1,25 +1,41 @@
 import os
+from tqdm import tqdm
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
 from scipy.io import wavfile
 from python_speech_features import mfcc
 import soundfile as sf
+from multiprocessing import Pool
 
 from scipy.optimize import curve_fit
 from scipy.stats import entropy
 from torch.utils.data import Dataset, DataLoader
 from librosa.effects import trim
 import torch
+import argparse
+
+def parse_args():
+
+    parser = argparse.ArgumentParser(description="Preprocess the ASVSpoof dataset")
+    parser.add_argument("--type", default="full", help="type of processed signal can be:\n"
+            "full: the whole signal is processed\n"
+            "sound: processes only parts with high enough energy\n"
+            "silence: processes only parts with low enough energy\n"
+    )
+    return parser.parse_args()
+
 
 class AudioDataset(Dataset):
 
-    def __init__(self, dataset_path, audio_format, n_freq, base):
+    def __init__(self, dataset_path, audio_format, n_freq, base, signal_type):
 
         super().__init__()
         self.audio_format = audio_format
         self.n_freq = n_freq
         self.base = base
+        self.signal_type = signal_type
 
         self.files = []
 
@@ -36,32 +52,32 @@ class AudioDataset(Dataset):
 
         audio_path = self.files[idx]
         divergences_list = []
-        for q in range(1, 5):
 
-            ffs = first_digit_call(
-                audio_path=audio_path,
-                audio_format=self.audio_format,
-                n_freq=self.n_freq,
-                q=q,
-                base=self.base
-            ) # (13, base - 1)
+        ffs, len_signals = first_digit_call(
+            audio_path=audio_path,
+            audio_format=self.audio_format,
+            n_freq=self.n_freq,
+            base=self.base,
+            signal_type=self.signal_type
+        ) # (13, base - 1)
 
-            # for each frequency i = {0, 1, ..., 13}
-            for ff in ffs:
-                for i in range(0, n_freq):
+        # for each frequency i = {0, 1, ..., 13}
+        for ff in ffs:
+            for i in range(0, n_freq):
 
-                    ff_temp = ff[i, :] # take one frequency at time (1, base - 1)
+                # ff_temp_sound = ff_sound[i, :] # take one frequency at time (1, base - 1)
+                ff_temp = ff[i, :] # take one frequency at time (1, base - 1)
 
-                    mse, popt_0, popt_1, popt_2, kl, reny, tsallis = feature_extraction(ff_temp)
+                mse, popt_0, popt_1, popt_2, kl, reny, tsallis = feature_extraction(ff_temp)
+                divergences_list += [float(mse), float(kl), float(reny), float(tsallis)] 
 
-                    divergences_list += [float(mse), float(kl), float(reny), float(tsallis)]
         name = os.path.basename(audio_path)
 
-        return name, np.array(divergences_list)
+        return name, np.array(divergences_list), np.array(len_signals)
 
 
 
-def create_df(dataset_path, audio_format, splitting_path, n_freq, base):
+def create_df(dataset_path, audio_format, splitting_path, n_freq, base, signal_type="full"):
     """
     This function creates a Pandas DataFrame in which each row corresponds to an audio sample. In particular, each row
     contains the four divergences computed for each audio's frequency (4*13 = 52) computed with different quantization steps (52*4 = 208 columns).
@@ -77,18 +93,23 @@ def create_df(dataset_path, audio_format, splitting_path, n_freq, base):
     df = pd.DataFrame()
 
     name_list = []
-    dataset = AudioDataset(dataset_path, audio_format, n_freq, base)
-    dataloader = DataLoader(dataset, batch_size=4, shuffle=False, num_workers=os.cpu_count())
+    dataset = AudioDataset(dataset_path, audio_format, n_freq, base, signal_type)
     names = []
     samples = []
+    signal_lengths = []
 
-    for name, data in dataloader:
-        samples.append(data)
-        names += name
+    with Pool(os.cpu_count(), maxtasksperchild=1) as p:
+        names, samples, signal_lengths = zip(*tqdm(p.imap(dataset.__getitem__, np.arange(len(dataset))), total=len(dataset)))
+    # for name, data, signal_len in tqdm(dataloader):
+        # samples.append(data)
+        # signal_lengths += list(signal_len.numpy())
+        # names += name
 
-    df = pd.DataFrame(torch.cat(samples, axis=0).numpy())
+
+    df = pd.DataFrame(samples)
     df.insert(loc=0, column='name', value=names)
     df["Audio file name"] = df.apply(lambda x: x["name"][:-5], axis=1)
+    df["length"] = signal_lengths
 
     # assign the corresponding label
     data = pd.read_csv(splitting_path)
@@ -97,8 +118,8 @@ def create_df(dataset_path, audio_format, splitting_path, n_freq, base):
     df = df.drop(columns=["Label", "Speaker ID", "Unnamed: 0"])
     df.rename(columns={"System ID": "system ID"}, inplace=True)
 
-    list = (df[df.isna().any(axis=1)]['name'])
-    df = df[df.name.isin(list) == False]
+    # df_list = (df[df.isna().any(axis=1)]['name'])
+    # df = df[df.name.isin(df_list) == False]
 
     # sorted dataframe by 'name' column
     df = df.sort_values(by=['name'], ascending=True)
@@ -106,9 +127,17 @@ def create_df(dataset_path, audio_format, splitting_path, n_freq, base):
     return df
 
 
+def split_silence(signal):
+    power = signal ** 2
+    filt = torch.ones((1, 1, 101))
+    data = torch.tensor(power).unsqueeze(0).unsqueeze(0).float()
+    window_power = torch.nn.functional.conv1d(data, filt, stride = 1, padding=50) + 1e-10
+    window_power = window_power / 101
+    window_power_db = -10 * np.log10(window_power)
+    return window_power_db
 
 
-def mfcc_feature_extraction(audio_path, audio_format, q):
+def mfcc_feature_extraction(audio_path, audio_format, signal_type="full"):
     """
     This function extracts mfcc features from an audio file.
 
@@ -133,25 +162,27 @@ def mfcc_feature_extraction(audio_path, audio_format, q):
         print("Invalid value encountered in 'audio_format'")
 
     # trim all silence that is longer than 0.1 s
-    signal, _ = trim(signal, top_db = 40)
+    if signal_type != "full":
+        window_power = split_silence(signal)
+    if signal_type == "silence":
+        silence = signal[torch.where(window_power[0, 0] > 40)]
+        signal = silence[np.where(silence != 0)]
+    elif signal_type == "sound":
+        signal = signal[torch.where(window_power[0, 0] <= 40)]
+
+    signal = signal[np.where(signal != 0)]
+    signal_lengths = len(signal)
+    # this can only happen for silence signals since they are usually shorter
+    # the noise is just a placeholder since it will be removed form training/testing
+    if signal_lengths < 5000:
+        signal = np.random.rand(10000)
 
     slices = []
     last = 0
 
-    #finding slices that should be removed
-    for i in range(len(signal)):
-        if signal[i] != 0:
-            if last != i and ((i - last) / sr) > 0.05:
-                slices.extend([last, i])
-            last = i + 1
-
-    if len(slices) > 0:
-        splits = np.split(signal, slices)
-        signal = np.concatenate(splits[::2], axis=0)
-
     # divide the signal into frames of 1024 samples, with an overlap of 512 samples (~50%)
     winlen = 1024 / sr  # convert into seconds
-    winstep = winlen / 2
+    winstep = winlen / (8 if signal_type == "silence" else 2)
 
     # number of coefficients to return
     numcep = 14
@@ -168,10 +199,7 @@ def mfcc_feature_extraction(audio_path, audio_format, q):
     # get mfcc coefficients of shape (numframes, numcep)
     mfccs = mfcc(signal, samplerate=sr, winlen=winlen, winstep=winstep, nfft=nfft, numcep=numcep, nfilt=nfilt, highfreq=highfreq)
 
-    # quantization
-    mfccs = (mfccs / q)
-
-    return mfccs
+    return mfccs, signal_lengths
 
 
 def first_digit_gen(d, base):
@@ -217,7 +245,7 @@ def compute_histograms(audio, base, n_freq):
     return np.asarray(h_audio)
 
 
-def first_digit_call(audio_path, audio_format, n_freq, q, base):
+def first_digit_call(audio_path, audio_format, n_freq, base, signal_type):
     """
         This function computes the MFCCs and the corresponding first digit vector and histogram of each .wav file stored in a given directory.
 
@@ -234,21 +262,22 @@ def first_digit_call(audio_path, audio_format, n_freq, q, base):
     """
 
     # extract mfcc features from the audio
-    audio_mfccs = mfcc_feature_extraction(audio_path, audio_format, q)
+    mfccs, len_signals = mfcc_feature_extraction(audio_path, audio_format, signal_type=signal_type)
 
     # remove DC (zero frequency component)
-    audio_mfccs = audio_mfccs[:, 1:] # (numframes, 13)
+    mfccs = mfccs[:, 1:] # (numframes, 13)
 
     # actually compute first digit vector
     ffs = []
-    for b in base:
-        fd = first_digit_gen(audio_mfccs, b) # (numframes, 13)
+    for q in range(1, 5):
+        for b in base:
+            fd = first_digit_gen(mfccs / q, b) # (numframes, 13)
 
-    # computing histograms
-        ff = compute_histograms(fd, b, n_freq)  # matrix with shape (frequencies, probabilities) = (13, base - 1)
-        ffs.append(ff)
+            # computing histograms
+            ff = compute_histograms(fd, b, n_freq)  # matrix with shape (frequencies, probabilities) = (13, base - 1)
+            ffs.append(ff)
 
-    return ffs
+    return ffs, len_signals
 
 
 def renyi_div(pk, qk, alpha):
@@ -353,6 +382,9 @@ def concatenate_df(df_base10, df_base20):
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
 
+    args = parse_args()
+    signal_type = args.type
+    assert signal_type in ["full", "sound", "silence"]
     train_path = 'datasets/raw/ASVspoof-LA/ASVspoof2019_LA_train/flac/'
     dev_path = 'datasets/raw/ASVspoof-LA/ASVspoof2019_LA_dev/flac/'
     eval_path = 'datasets/raw/ASVspoof-LA/ASVspoof2019_LA_eval/flac/'
@@ -360,28 +392,27 @@ if __name__ == '__main__':
     train_splitting_path = "datasets/processed/ASVspoof-LA/asv_training_set.csv"
     dev_splitting_path = "datasets/processed/ASVspoof-LA/asv_development_set.csv"
     eval_splitting_path = "datasets/processed/ASVspoof-LA/asv_evaluation_set.csv"
-    # import resource
-    # rlimit = resource.getrlimit(resource.RLIMIT_NOFILE)
-    # resource.setrlimit(resource.RLIMIT_NOFILE, (4096, rlimit[1]))
-    pool = torch.multiprocessing.Pool(torch.multiprocessing.cpu_count(), maxtasksperchild=1)
-    torch.multiprocessing.set_sharing_strategy('file_system')
+
+    #required since sometimes there are errors with torch
+    # pool = torch.multiprocessing.Pool(torch.multiprocessing.cpu_count(), maxtasksperchild=1)
+    # torch.multiprocessing.set_sharing_strategy('file_system')
 
     n_freq = 13
 
     print("Train")
     # Training
-    df_train = create_df(dataset_path=train_path, audio_format='.flac', splitting_path=train_splitting_path,n_freq=n_freq, base=[10, 20])
+    df_train = create_df(dataset_path=train_path, audio_format='.flac', splitting_path=train_splitting_path,n_freq=n_freq, base=[10, 20], signal_type=signal_type)
 
-    pd.DataFrame(df_train).to_csv("datasets/processed/ASVspoof-LA/df_train.csv", index=False)
+    pd.DataFrame(df_train).to_csv(f"datasets/processed/ASVspoof-LA/df_train_{signal_type}.csv", index=False)
 
     print("Dev")
     # Development
-    df_dev = create_df(dataset_path=dev_path, audio_format='.flac', splitting_path=dev_splitting_path, n_freq=n_freq, base=[10, 20])
+    df_dev = create_df(dataset_path=dev_path, audio_format='.flac', splitting_path=dev_splitting_path, n_freq=n_freq, base=[10, 20], signal_type=signal_type)
 
-    pd.DataFrame(df_dev).to_csv("datasets/processed/ASVspoof-LA/df_dev.csv", index=False)
+    pd.DataFrame(df_dev).to_csv(f"datasets/processed/ASVspoof-LA/df_dev_{signal_type}.csv", index=False)
 
     print("Eval")
     # Evaluation
-    df_eval = create_df(dataset_path=eval_path, audio_format='.flac', splitting_path=eval_splitting_path,n_freq=n_freq, base=[10, 20])
+    df_eval = create_df(dataset_path=eval_path, audio_format='.flac', splitting_path=eval_splitting_path,n_freq=n_freq, base=[10, 20], signal_type=signal_type)
 
-    pd.DataFrame(df_eval).to_csv("datasets/processed/ASVspoof-LA/df_eval.csv", index=False)
+    pd.DataFrame(df_eval).to_csv(f"datasets/processed/ASVspoof-LA/df_eval_{signal_type}.csv", index=False)
