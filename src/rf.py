@@ -3,6 +3,8 @@ import numpy as np
 import pandas as pd
 import seaborn as sn
 import matplotlib.pyplot as plt
+import os
+import random
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import PredefinedSplit, train_test_split, GridSearchCV
@@ -35,16 +37,20 @@ def plot_confusion_matrix(dataset, y_true, y_pred, labels, cmap):
 
 def select_useful_features(X, q, base):
 
+    X = X.to_numpy()
+
     if q != "all":
         q = int(q)
-        delta = X.shape[1]
-        X = X[(delta * (q-1)):(delta * q)]
+        delta = X.shape[1] // 4
+        X = X.reshape((-1, 4, X.shape[1] // 4))
+        X = X[:, :q]
 
     if base != "all":
         base = int(base)
         X = X.reshape((-1, X.shape[1] // 13, 13))
         X = X[:, (0 if base==10 else 1)::2]
-        X = X.reshape([X.shape[0], -1])
+
+    X = X.reshape([X.shape[0], -1])
     
     return X
 
@@ -53,6 +59,9 @@ def select_useful_features(X, q, base):
 # Press the green button in the gutter to run the script.
 if __name__ == '__main__':
 
+    seed = 0
+    np.random.seed(seed)
+    random.seed(seed)
     args = parse_args()
     q = args.q
     base = args.base
@@ -76,12 +85,12 @@ if __name__ == '__main__':
 
     #  train on same number of natural and generated audio
     df_train_nat = train_data.loc[train_data['system ID'] == '-']
-    df_train_gen_A01 = train_data.loc[train_data['system ID'] == 'A01'][0:430]
-    df_train_gen_A02 = train_data.loc[train_data['system ID'] == 'A02'][0:430]
-    df_train_gen_A03 = train_data.loc[train_data['system ID'] == 'A03'][0:430]
-    df_train_gen_A04 = train_data.loc[train_data['system ID'] == 'A04'][0:430]
-    df_train_gen_A05 = train_data.loc[train_data['system ID'] == 'A05'][0:430]
-    df_train_gen_A06 = train_data.loc[train_data['system ID'] == 'A06'][0:430]
+    df_train_gen_A01 = train_data.loc[train_data['system ID'] == 'A01'].sample(frac=1, random_state=np.random.randint(0, 10000))[0:430]
+    df_train_gen_A02 = train_data.loc[train_data['system ID'] == 'A02'].sample(frac=1, random_state=np.random.randint(0, 10000))[0:430]
+    df_train_gen_A03 = train_data.loc[train_data['system ID'] == 'A03'].sample(frac=1, random_state=np.random.randint(0, 10000))[0:430]
+    df_train_gen_A04 = train_data.loc[train_data['system ID'] == 'A04'].sample(frac=1, random_state=np.random.randint(0, 10000))[0:430]
+    df_train_gen_A05 = train_data.loc[train_data['system ID'] == 'A05'].sample(frac=1, random_state=np.random.randint(0, 10000))[0:430]
+    df_train_gen_A06 = train_data.loc[train_data['system ID'] == 'A06'].sample(frac=1, random_state=np.random.randint(0, 10000))[0:430]
     df_train_gen = pd.concat([df_train_gen_A01, df_train_gen_A02, df_train_gen_A03, df_train_gen_A04, df_train_gen_A05, df_train_gen_A06], axis=0)
 
     df_train = pd.concat([df_train_nat, df_train_gen], axis=0)  # create the new training dataset
@@ -92,6 +101,7 @@ if __name__ == '__main__':
     # remove names, System ID and labels columns
     X_train = df_train.iloc[:, :-2]
     X_train = X_train.iloc[:, 1:]
+    X_train = select_useful_features(X_train, q, base)
 
     # split training set into actual training and validation sets
     X_train, X_valid, y_train, y_valid = train_test_split(X_train, y_train, shuffle=True, train_size=0.8)
@@ -112,7 +122,7 @@ if __name__ == '__main__':
 
     params = dict(n_estimators=n_estimators, criterion=criterion)
 
-    clf = RandomForestClassifier()
+    clf = RandomForestClassifier(n_jobs=os.cpu_count(), random_state=seed)
 
     gs = GridSearchCV(clf, params, cv=pds, scoring='accuracy', verbose=10)
 
@@ -142,6 +152,7 @@ if __name__ == '__main__':
         y_train = df_train['label'].to_numpy()
         X_train = df_train.iloc[:, :-2]
         X_train = X_train.iloc[:, 1:]
+        X_train = select_useful_features(X_train, q, base)
 
         y_train_pred = best_clf.predict(X_train)
         y_train_pred = np.array(y_train_pred)  # predicted labels
@@ -164,6 +175,7 @@ if __name__ == '__main__':
         y_dev = df_dev['label'].to_numpy()
         X_dev = df_dev.iloc[:, :-2]
         X_dev = X_dev.iloc[:, 1:]
+        X_dev = select_useful_features(X_dev, q, base)
 
         y_dev_pred = best_clf.predict(X_dev)
         y_dev_pred = np.array(y_dev_pred)  # predicted labels
@@ -192,6 +204,7 @@ if __name__ == '__main__':
         y_eval = df_eval['label'].to_numpy()
         X_eval = df_eval.iloc[:, :-2]
         X_eval = X_eval.iloc[:, 1:]
+        X_eval = select_useful_features(X_eval, q, base)
 
         y_eval_pred = best_clf.predict(X_eval)
         y_eval_pred = np.array(y_eval_pred)  # predicted labels
