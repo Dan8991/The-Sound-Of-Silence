@@ -1,6 +1,14 @@
-name: Tesi
+name: Sound-of-Silence
 channels:
 dependencies:
-  - python=3.9
   - numpy
   - matplotlib
+  - pytorch::pytorch
+  - pip
+  - conda-forge::tqdm
+  - pandas
+  - scipy
+  - conda-forge::librosa
+  - seaborn
+  - contango::python_speech_features
+  - conda-forge::pysoundfile
