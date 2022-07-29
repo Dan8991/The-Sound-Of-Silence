@@ -124,6 +124,7 @@ if __name__ == '__main__':
 
     clf = RandomForestClassifier(n_jobs=os.cpu_count(), random_state=seed)
 
+    y_dev = dev_data["label"].value_counts()
     gs = GridSearchCV(clf, params, cv=pds, scoring='accuracy', verbose=10)
 
     # fitting the model (on X and y)
@@ -139,6 +140,8 @@ if __name__ == '__main__':
 
     #trainig set
     train_algs = ['A01', 'A02', 'A03', 'A04', 'A05', 'A06']
+
+    final_str = ""
 
     for alg in train_algs:
 
@@ -157,9 +160,12 @@ if __name__ == '__main__':
         y_train_pred = best_clf.predict(X_train)
         y_train_pred = np.array(y_train_pred)  # predicted labels
 
+        final_str += f" & {accuracy_score(y_train, y_train_pred):.3f}"
         print("Train {} accuracy:".format(alg), accuracy_score(y_train, y_train_pred), "F1 score:", f1_score(y_train, y_train_pred, average='macro'))
 
-        plot_confusion_matrix('Development ({}) set'.format(alg), y_train, y_train_pred, labels, 'Reds')
+    print(final_str)
+    final_str = ""
+        # plot_confusion_matrix('Development ({}) set'.format(alg), y_train, y_train_pred, labels, 'Reds')
     # Development set
     dev_algs = ['A01', 'A02', 'A03', 'A04', 'A05', 'A06']
 
@@ -180,12 +186,21 @@ if __name__ == '__main__':
         y_dev_pred = best_clf.predict(X_dev)
         y_dev_pred = np.array(y_dev_pred)  # predicted labels
 
+        final_str += f" & {accuracy_score(y_dev, y_dev_pred):.3f}"
         print("Development {} accuracy:".format(alg), accuracy_score(y_dev, y_dev_pred), "F1 score:", f1_score(y_dev, y_dev_pred, average='macro'))
 
-        plot_confusion_matrix('Development ({}) set'.format(alg), y_dev, y_dev_pred, labels, 'Reds')
+        # plot_confusion_matrix('Development ({}) set'.format(alg), y_dev, y_dev_pred, labels, 'Reds')
+    y_dev = dev_data["label"].to_numpy()
+    x_dev = select_useful_features(dev_data.iloc[:, 1:-2], q, base)
+    y_dev_pred = best_clf.predict(x_dev)
+    sample_weights = 1/np.sum(y_dev) * y_dev + 1/np.sum(1-y_dev)*(1-y_dev)
+    print(f"dev accuracy {accuracy_score(y_dev, y_dev_pred, sample_weight=sample_weights):.3f}")
+
 
 
     # Evaluation set
+    print(final_str)
+    final_str = ""
     eval_algs = ['A07', 'A08', 'A09', 'A10', 'A11', 'A12', 'A13', 'A14', 'A15', 'A16', 'A17', 'A18', 'A19']
 
     for alg in eval_algs:
@@ -209,9 +224,16 @@ if __name__ == '__main__':
         y_eval_pred = best_clf.predict(X_eval)
         y_eval_pred = np.array(y_eval_pred)  # predicted labels
 
+        final_str += f" & {accuracy_score(y_eval, y_eval_pred):.3f}"
         print("Evaluation {} accuracy:".format(alg), accuracy_score(y_eval, y_eval_pred), "F1 score:",f1_score(y_eval, y_eval_pred, average='macro'))
 
-        plot_confusion_matrix('Evaluation ({}) set'.format(alg), y_eval, y_eval_pred, labels, 'Reds')
+    print(final_str)
+    y_eval = eval_data["label"].to_numpy()
+    x_eval = select_useful_features(eval_data.iloc[:, 1:-2], q, base)
+    y_eval_pred = best_clf.predict(x_eval)
+    sample_weights = 1/np.sum(y_eval) * y_eval + 1/np.sum(1-y_eval)*(1-y_eval)
+    print(f"eval accuracy {accuracy_score(y_eval, y_eval_pred, sample_weight=sample_weights):.3f}")
+        # plot_confusion_matrix('Evaluation ({}) set'.format(alg), y_eval, y_eval_pred, labels, 'Reds')
 
 
 
