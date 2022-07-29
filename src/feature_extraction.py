@@ -11,7 +11,7 @@ from multiprocessing import Pool
 
 from scipy.optimize import curve_fit
 from scipy.stats import entropy
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import Dataset
 from librosa.effects import trim
 import torch
 import argparse
