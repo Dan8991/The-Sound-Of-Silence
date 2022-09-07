@@ -29,7 +29,7 @@ def parse_args():
 
 class AudioDataset(Dataset):
 
-    def __init__(self, dataset_path, audio_format, n_freq, base, signal_type):
+    def __init__(self, dataset_path, splitting_path, audio_format, n_freq, base, signal_type):
 
         super().__init__()
         self.audio_format = audio_format
@@ -44,6 +44,8 @@ class AudioDataset(Dataset):
 
                 audio_path = os.path.join(dirpath, f).replace("\\", "/") # for example 'datasets/raw/ASVspoof-LA/LA_D_1000752.flac'
                 self.files.append(audio_path)
+
+        self.data = pd.read_csv(splitting_path)
         
     def __len__(self):
         return len(self.files)
@@ -53,8 +55,10 @@ class AudioDataset(Dataset):
         audio_path = self.files[idx]
         divergences_list = []
 
+        name = os.path.basename(audio_path)
         ffs, len_signals = first_digit_call(
             audio_path=audio_path,
+            label=self.data[self.data["Audio file name"]==name[:-5]]["Label"].iat[0],
             audio_format=self.audio_format,
             n_freq=self.n_freq,
             base=self.base,
@@ -71,7 +75,6 @@ class AudioDataset(Dataset):
                 mse, popt_0, popt_1, popt_2, kl, reny, tsallis = feature_extraction(ff_temp)
                 divergences_list += [float(mse), float(kl), float(reny), float(tsallis)] 
 
-        name = os.path.basename(audio_path)
 
         return name, np.array(divergences_list), np.array(len_signals)
 
@@ -93,7 +96,7 @@ def create_df(dataset_path, audio_format, splitting_path, n_freq, base, signal_t
     df = pd.DataFrame()
 
     name_list = []
-    dataset = AudioDataset(dataset_path, audio_format, n_freq, base, signal_type)
+    dataset = AudioDataset(dataset_path, splitting_path, audio_format, n_freq, base, signal_type)
     names = []
     samples = []
     signal_lengths = []
@@ -112,8 +115,7 @@ def create_df(dataset_path, audio_format, splitting_path, n_freq, base, signal_t
     df["length"] = signal_lengths
 
     # assign the corresponding label
-    data = pd.read_csv(splitting_path)
-    df = pd.merge(df, data, on=["Audio file name"]).drop(columns="Audio file name")
+    df = pd.merge(df, dataset.data, on=["Audio file name"]).drop(columns="Audio file name")
     df["label"] = df.apply(map_labels, axis=1)
     df = df.drop(columns=["Label", "Speaker ID", "Unnamed: 0"])
     df.rename(columns={"System ID": "system ID"}, inplace=True)
@@ -137,7 +139,7 @@ def split_silence(signal):
     return window_power_db
 
 
-def mfcc_feature_extraction(audio_path, audio_format, signal_type="full"):
+def mfcc_feature_extraction(audio_path, label, audio_format, signal_type="full"):
     """
     This function extracts mfcc features from an audio file.
 
@@ -171,9 +173,9 @@ def mfcc_feature_extraction(audio_path, audio_format, signal_type="full"):
     elif signal_type == "sound":
         signal = signal[torch.where(window_power[0, 0] <= 40)]
 
-    old_signal = signal.copy()
-    if signal_type == "noise":
+    if signal_type == "noise" and label=="spoof":
         signal += np.random.randn(*signal.shape) * 0.003
+
 
     signal = signal[np.where(signal != 0)]
     signal_lengths = len(signal)
@@ -250,7 +252,7 @@ def compute_histograms(audio, base, n_freq):
     return np.asarray(h_audio)
 
 
-def first_digit_call(audio_path, audio_format, n_freq, base, signal_type):
+def first_digit_call(audio_path, label, audio_format, n_freq, base, signal_type):
     """
         This function computes the MFCCs and the corresponding first digit vector and histogram of each .wav file stored in a given directory.
 
@@ -267,7 +269,7 @@ def first_digit_call(audio_path, audio_format, n_freq, base, signal_type):
     """
 
     # extract mfcc features from the audio
-    mfccs, len_signals = mfcc_feature_extraction(audio_path, audio_format, signal_type=signal_type)
+    mfccs, len_signals = mfcc_feature_extraction(audio_path, label, audio_format, signal_type=signal_type)
 
     # remove DC (zero frequency component)
     mfccs = mfccs[:, 1:] # (numframes, 13)
