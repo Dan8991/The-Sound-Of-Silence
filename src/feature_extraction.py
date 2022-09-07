@@ -162,13 +162,18 @@ def mfcc_feature_extraction(audio_path, audio_format, signal_type="full"):
         print("Invalid value encountered in 'audio_format'")
 
     # trim all silence that is longer than 0.1 s
-    if signal_type != "full":
+    if signal_type != "full" and signal_type != "noise":
         window_power = split_silence(signal)
+
     if signal_type == "silence":
         silence = signal[torch.where(window_power[0, 0] > 40)]
         signal = silence[np.where(silence != 0)]
     elif signal_type == "sound":
         signal = signal[torch.where(window_power[0, 0] <= 40)]
+
+    old_signal = signal.copy()
+    if signal_type == "noise":
+        signal += np.random.randn(*signal.shape) * 0.003
 
     signal = signal[np.where(signal != 0)]
     signal_lengths = len(signal)
@@ -384,7 +389,7 @@ if __name__ == '__main__':
 
     args = parse_args()
     signal_type = args.type
-    assert signal_type in ["full", "sound", "silence"]
+    assert signal_type in ["full", "sound", "silence", "noise"]
     train_path = 'datasets/raw/ASVspoof-LA/ASVspoof2019_LA_train/flac/'
     dev_path = 'datasets/raw/ASVspoof-LA/ASVspoof2019_LA_dev/flac/'
     eval_path = 'datasets/raw/ASVspoof-LA/ASVspoof2019_LA_eval/flac/'
