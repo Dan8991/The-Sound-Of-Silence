@@ -1,6 +1,6 @@
 #  The Sound of Silence: Efficiency of First Digit Features in Synthetic Audio Detection
 
-This repository contains the code used to develop the algorithm described in the paper "The Sound of Silence: Efficiency of First Digit Features in Synthetic Audio Detection" (Accepted at WIFS 2022) by Daniele Mari, Federica Latora and Simone Milani.
+This repository contains the code used to develop the algorithm described in the paper "The Sound of Silence: Efficiency of First Digit Features in Synthetic Audio Detection" (Accepted at WIFS 2022) by [Daniele Mari](https://github.com/Dan8991), [Federica Latora](https://github.com/FedericaLatora) and [Simone Milani](https://github.com/profmilani).
 
 ## Installation
 ### Dataset
