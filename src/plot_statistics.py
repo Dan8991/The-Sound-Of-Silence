@@ -247,17 +247,23 @@ if __name__ == '__main__':
     mse_nat, popt_0_nat, popt_1_nat, popt_2_nat, kl_nat, reny_nat, tsallis_nat = feature_extraction(ff_nat)
 
     fitted_function = gen_benford(np.arange(1, base, 1), popt_0_nat, popt_1_nat, popt_2_nat)
+    fitted_function_gen = gen_benford(np.arange(1, base, 1), popt_0_gen, popt_1_gen, popt_2_gen)
 
-    plt.figure(figsize=(12,5))
-    plt.plot(digits, ff_nat, 'limegreen')
-    plt.plot(digits, ff_gen, 'firebrick')
-    plt.plot(digits, fitted_function, '--', color='darksalmon')
-    plt.legend(["Natural", "Generated", "Benford"])
-    plt.savefig("b10.png")
-    plt.title("Frequency number:{}".format(n))
+    fig, axs = plt.subplots(1, 2, figsize=(15, 5))
+    axs[0].plot(digits, ff_nat, 'green', label="Natural")
+    axs[1].plot(digits, ff_gen, 'firebrick', label="Generated")
+    axs[0].plot(digits, fitted_function, '--', color='darksalmon', label="Benford")
+    axs[1].plot(digits, fitted_function_gen, '--', color='limegreen', label="Benford")
+    axs[0].legend()
+    axs[1].legend()
+    axs[0].set_title("Frequency number:{}".format(n))
+    axs[1].set_title("Frequency number:{}".format(n))
 
-    plt.xlabel("First Digit")
-    plt.ylabel("p(d)")
+    axs[0].set_xlabel("First Digit")
+    axs[0].set_ylabel("p(d)")
+    axs[1].set_xlabel("First Digit")
+    axs[1].set_ylabel("p(d)")
+    plt.tight_layout()
     plt.show()
 
 
