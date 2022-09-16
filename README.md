@@ -41,6 +41,3 @@ Run
 python src/rf.py --type {type} --base {base} --q {q}
 ```
 to train the random forest classifiers and to get the results. The type argument is used to select the type of features, the base argument to choose the benford law base and the q argument to choose the scaling factors.
-
-
-
